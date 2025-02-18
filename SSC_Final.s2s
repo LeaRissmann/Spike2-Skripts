@@ -1,0 +1,519 @@
+    'titin diagnostic program under development Hessel March 31 2019
+'*******************************************GLOBAL VARIABLE NAMES***************************************************                                                                      
+'Toolbar Function Variables
+var wTrials%;        'New sampling file window
+var wMVC%;           'MVC duplicate window
+var ret%;
+var mvc1,mvc2,mvc3,mvc4,rest;
+var Redo,Redo1,Redo2;
+var xyMVC%;
+var wMwave%;
+var xyWindow%;
+var TorqueThr,pmvc;
+var chanTA%;
+var pChan;
+var EMGSOL;
+var vc1%;
+var vc2%;
+var vc3%;
+
+var vMVCDF;
+var vMVCPF;
+var vPercentMVC%;
+var vPercentMVCDF%;
+var vRampDurationUp%;
+var vHoldDuration%;
+var vRampStart;
+var vDelay%;
+var vYrangeOffset;
+var wRamp%;
+'set default values for ramp parameters
+
+var DisplayType%:=1;
+
+'NEW VARIABLES
+var vall, result%, vDelay1%, vDelay2%, vDelay3%, vDelay4%, vDelay5%;
+
+vMVCDF := 5000;
+vMVCPF := 4000;
+vPercentMVC% := 40;
+vPercentMVCDF% := 47;
+vRampDurationUp% := 1000;
+vRampStart := 0;
+vDelay% := 4000;
+vDelay1% := 5765;
+vDelay2% := 1000;
+vDelay3% := 2645;
+vDelay4% := 3113;
+vDelay5% := 2000;
+vYrangeOffset := 15;
+
+'SET FILE PATH
+FilePathSet("X:/Lea/Masterarbeit/Testung/LFR",0,"Where to save everything?");
+
+'New Data file******************************************************************************************************
+New%();		                 'Set up new sampling data window
+
+func New%()					 'Start script causes func New% to execute                                         
+
+var SelectSequencerResult%;        'Sets sequencer to use  
+FileOpen("X:\\Lea\\Masterarbeit\\Spike\\SSCConfigFileV1.s2c",6); 
+'Select Sequencer File to Use***************************************************************************************
+SelectSequencerResult% := SampleSequencer("X:\\Lea\\Masterarbeit\\Spike\\SSCtest.pls"); 'Sets sequencer directory and name to use 
+if (SelectSequencerResult%<0)then ; 'Check for error opening sequncer file 
+    message("sequencer file not selected correctly\nError code: %d", SelectSequencerResult%); 'Msg incorrect seqfile
+    message("current sequencer file is: %s",samplesequencer$()); 'Msg of which incorrect seqfile is current
+endif;
+'New Sampling Data File*********************************************************************************************
+wTrials%:=FileNew(0,1);            'Creates a new sampling data file
+Window(0,0,100,100);               'Maximises window					
+WindowVisible(1);                  'Makes new sampling data window visible
+if wTrials%=0 then Message("Unable to open new data file"); Halt; endif; 'If error creating data file then error msg
+FrontView(wTrials%);               'Brings newly creating sampling file to the front
+XRange(0,30);                      'Sets X scale so time scale is reasonable
+YRange(2,-40,40);                  'Sets angle y range from 0 to 15 deg
+YRange(1,-20,100);                 'Sets ramp y range from -5 to 5V
+EMGSOL := ChanDuplicate(9); 'Create a duplicate channel (called9a) of SOL EMG Channel
+ChanProcessAdd(EMGSOL, 2,0.05); 'Add DC Remove to channel 3
+ChanProcessAdd(EMGSOL, 8, 0.25); 'Add RMS amplitude to 3
+vc1%:=VirtualChan(0,"Ch(7)",1,0,0);         'Virtual channel to match EMG to ramp signal
+vc2%:=VirtualChan(0,"Ch(8)",1,0,0);         'Virtual channel to match EMG to ramp signal
+vc3%:= VirtualChan(0,"Ch(9a)",1);           'Create new virtual channel
+ChanShow("1,m1,2,6,9,9a,31");             'Show desired channels
+DLgCreate("Trig Vale");
+DLGReal(1,"Input value",-15,10);
+DlgShow(vall);
+result%:=((vall-ChanOffset(2))*6553.6/ChanScale(2)); ' calculation of correct sequencer value
+HCursor(1,vall,2);
+'Message(result%);
+SampleSeqVar(41,result%); ' send value to V41 in sequencer
+
+SampleStart();
+Return 1;                          'returns from function
+End;                               'ends function
+
+'********************************************Toolbar Functions******************************************************
+DoToolbar();                                    'Create toolbar
+Proc DoToolbar()                                'Process for toolbar creation
+ToolbarClear();                                 'Remove any old toolbar buttons
+ToolbarSet(31,"CursorsTMS",Cursor3%);  'Sets Cursors for MEPs
+ToolbarSet(30,"CursorsCMS",Cursor2%);             'Sets Cursors for CMEPs
+ToolbarSet(29,"CursorsNMES",Cursor1%);             'Sets Cursors for M-wave and H-reflex
+
+ToolbarSet(27,"SetRamp",OnSettings%);
+ToolbarSet(26,"RampWindow",MatchRamp%);
+ToolbarSet(25,"YRange",YRange1%);
+
+ToolbarSet(23,"STR",ECC%); 
+ToolbarSet(22,"ISOPF",ISOPF%);
+ToolbarSet(21,"SSC",SSC%);  
+ToolbarSet(20,"SHO",CONC%); 
+ToolbarSet(19,"ISODF",ISODF%); 
+ToolbarSet(18,"ZERO",Zero%); 
+
+ToolbarSet(12,"XRange",XRange%);  
+
+ToolbarSet(11,"StartMVC",MVCstart%);
+ToolbarSet(10,"FindMVC",MVC%);   
+ToolbarSet(9,"MVCvalues",MVCvalues%);
+ToolbarSet(8,"RedoMVC",RedoMVC%);
+
+ToolbarSet(6,"DF",DF%);
+ToolbarSet(5,"PF",PF%); 
+ToolbarSet(4,"EMGChans",EMGchan%);                    'Shows EMG channels only
+ToolbarSet(3,"RelavantChans",Show%);                    'Shows all relevant channles 
+ToolbarSet(1,"Exit",Quit%);                     'Exits the toolbar and all open windows
+ToolbarSet(0,"",Idle%);                         'Idle function: Keeps toolbar active & functions return to it
+Toolbar("Running",231);          'Msg to say click start to begin sampling
+Return;                                         'Return followed by no number as it's a process
+End;                                            'End toolbar creation
+
+'IDLE TOOLBAR******************************************
+Func Idle%()             
+Return 1;	                                    'Keeps toolbar active - if 0 or omitted, toolbar closes
+End;         '           
+
+'RESET SAMPLING TO LEFT HAND EDGE**********************
+Func XRange%() 
+Xrange(maxtime(),maxtime()+30);
+Return 1;        
+End;
+'SHOW ALL RELEVANT CHANNELS****************************
+Func Show%()
+FrontView(wTrials%);
+ChanShow("1,m1,2,6,9,9a,31");
+Return 1;
+End;
+
+Func Zero%()
+SampleKey("z");
+Return 1;
+End;
+
+Func PF%()
+SampleKey("A");
+Return 1;
+End;
+
+Func DF%()
+SampleKey("T");
+Return 1;
+End;
+
+Func ISODF%()
+CursorNew(MaxTime(),9);
+Cursor(9,MaxTime());
+CursorVisible(9);
+SampleKey("D");
+Yield(14);
+ExportChanList(1); 'Initialise the channel list
+ExportChanList(Cursor(9), Cursor(9)+13, 1,2,3,5,6,9,10,11,31);
+FileSaveAs("",100,0,"",0,"UseSName=0|UseCName=1|WaveTimes=0|BinFreq=0|BinTimes=0|WaveData=2|MarkAs=1|TMarkAs=2|RMarkAs=2|RMarkData=2|WaveMarkAs=2|WaveMarkData=2|Compat=0|WaveAll=1|WaveSameN=0");
+Return 1;
+End;
+
+
+Func ISOPF%()
+CursorNew(MaxTime(),9);
+Cursor(9,MaxTime());
+CursorVisible(9);
+SampleKey("P");
+Yield(14);
+ExportChanList(1); 'Initialise the channel list
+ExportChanList(Cursor(9), Cursor(9)+13, 1,2,3,5,6,9,10,11,31);
+FileSaveAs("",100,0,"",0,"UseSName=0|UseCName=1|WaveTimes=0|BinFreq=0|BinTimes=0|WaveData=2|MarkAs=1|TMarkAs=2|RMarkAs=2|RMarkData=2|WaveMarkAs=2|WaveMarkData=2|Compat=0|WaveAll=1|WaveSameN=0");
+Return 1;
+End;
+
+Func ECC%()
+CursorNew(MaxTime(),9);
+Cursor(9,MaxTime());
+CursorVisible(9);
+SampleKey("L");
+Yield(14);
+ExportChanList(1); 'Initialise the channel list
+ExportChanList(Cursor(9), Cursor(9)+13, 1,2,3,5,6,9,10,11,31);
+FileSaveAs("",100,0,"",0,"UseSName=0|UseCName=1|WaveTimes=0|BinFreq=0|BinTimes=0|WaveData=2|MarkAs=1|TMarkAs=2|RMarkAs=2|RMarkData=2|WaveMarkAs=2|WaveMarkData=2|Compat=0|WaveAll=1|WaveSameN=0");
+Return 1;
+End;
+
+Func CONC%()
+CursorNew(MaxTime(),9);
+Cursor(9,MaxTime());
+CursorVisible(9);
+SampleKey("S");
+Yield(14);
+ExportChanList(1); 'Initialise the channel list
+ExportChanList(Cursor(9), Cursor(9)+13, 1,2,3,5,6,9,10,11,31);
+FileSaveAs("",100,0,"",0,"UseSName=0|UseCName=1|WaveTimes=0|BinFreq=0|BinTimes=0|WaveData=2|MarkAs=1|TMarkAs=2|RMarkAs=2|RMarkData=2|WaveMarkAs=2|WaveMarkData=2|Compat=0|WaveAll=1|WaveSameN=0");
+Return 1;
+End;
+
+Func SSC%()
+CursorNew(MaxTime(),9);
+Cursor(9,MaxTime());
+CursorVisible(9);
+SampleKey("X");
+Yield(14);
+ExportChanList(1); 'Initialise the channel list
+ExportChanList(Cursor(9), Cursor(9)+13, 1,2,3,5,6,9,10,11,31);
+FileSaveAs("",100,0,"",0,"UseSName=0|UseCName=1|WaveTimes=0|BinFreq=0|BinTimes=0|WaveData=2|MarkAs=1|TMarkAs=2|RMarkAs=2|RMarkData=2|WaveMarkAs=2|WaveMarkData=2|Compat=0|WaveAll=1|WaveSameN=0");
+Return 1;
+End;
+
+Func MVCstart%()
+CursorNew(MaxTime(),9);
+Cursor(9,MaxTime());
+CursorVisible(9);
+SampleKey("M");
+Yield(7);
+ExportChanList(1); 'Initialise the channel list
+ExportChanList(Cursor(9), Cursor(9)+6, 1,2,3,5,6,9,10,11,31);
+FileSaveAs("",100,0,"",0,"UseSName=0|UseCName=1|WaveTimes=0|BinFreq=0|BinTimes=0|WaveData=2|MarkAs=1|TMarkAs=2|RMarkAs=2|RMarkData=2|WaveMarkAs=2|WaveMarkData=2|Compat=0|WaveAll=1|WaveSameN=0");
+Return 1;
+End;
+
+'SHOW EMG CHANNELS ONLY********************************
+Func EMGchan%()
+FrontView(wTrials%);
+ChanHide(-1);
+ChanShow("3");
+ChanShow("9");
+ChanShow("10");
+ChanShow("11");
+Return 1;
+End;
+
+'FIND MAX TORQUE DURING MVC****************************
+var hc%;     'a dummy variable needed to automatically make a horizontal cursor
+
+Func MVC%()
+FrontView(wTrials%);
+if wMVC%=0 then wMVC%:=WindowDuplicate(); endif;
+FrontView(wMVC%);
+if hc%=0 then hc%:=HCursorNew(1,0); endif;
+Window(50,0,100,85);   
+ChanHide(-1);                              'hide all channels
+ChanShow("1,9");                    'Show Soleus EMG 9
+ChanShow(EMGSOL);
+ViewTrigger(31,0,0,1,2,6,1,1,1,0);         'Enable view trigger
+CursorVisible(0,1);
+CursorNew(0,1);                            'Creates cursor 1
+CursorActive(1,16, 0, "Cursor(0)+10");
+CursorVisible(1, 1);                       'Shows cursor 1
+XRange(0.0,6);                             'X axis from 0-10secs (MVC for 6secs, 10sec to ensure it's captured
+CursorOpen(1,1,-2,10); 'Open cursor values dialog
+Window(50,85); 'Set location of cursor pop up window
+FrontView(wMVC%);
+Return 1;
+End;
+
+'TYPE IN MVC VALUES AND SEE IF NEED TO DO MORE THAN TWO
+Func MVCvalues%()
+DlgCreate("MVC values");
+DlgReal(1,"MVC1: ",0,5000);
+DlgReal(2,"MVC2: ",0,5000);
+DlgReal(3,"MVC3: ",0,5000);
+DlgReal(4,"Max MVC: ",0,5000); ''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
+DlgReal(5,"Resting: ",-5000,5000); ''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
+DlgShow(mvc1,mvc2,mvc3,mvc4,rest);
+Return 1;
+End;
+
+Func RedoMVC%()
+if mvc1=0 then Message("There are currently no MVC values"); 
+DlgCreate("MVC values");
+DlgReal(1,"MVC1: ",0,5000);
+DlgReal(2,"MVC2: ",0,5000);
+DlgReal(3,"MVC3: ",0,5000);
+DlgReal(4,"Max MVC: ",0,5000); ''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
+DlgShow(mvc1,mvc2,mvc3,mvc4); 
+else
+Redo:=mvc1-mvc2;
+if mvc1>mvc2 then
+    Redo:=Redo/mvc2;
+    Redo:=Redo*100;
+else
+    Redo:=Redo/mvc1;
+    Redo:=Redo*100*-1;
+endif;
+if Redo >4.99 then
+    if mvc3 = 0 then
+        Message("MVC Diff:|",Redo,"% \n Do a 3rd MVC");
+    else
+        Redo1:=mvc1-mvc3;
+        if mvc1>mvc3 then
+            Redo1:=Redo1/mvc3;
+            Redo1:=Redo1*100;
+        else
+            Redo1:=Redo1/mvc1;
+            Redo1:=Redo1*100*-1;
+        endif
+        Redo2:=mvc2-mvc3;
+        if mvc2>mvc3 then
+            Redo2:=Redo2/mvc3;
+            Redo2:=Redo2*100;
+        else
+            Redo2:=Redo2/mvc2;
+            Redo2:=Redo2*100*-1;
+        endif  
+    Message("MVC Diff:|","1vs2: ",Redo,"% \n","1vs3: ",Redo1,"% \n","2vs3: ",Redo2,"%");    
+    endif
+else
+    Message("MVC Diff:|",Redo,"%");
+    endif;
+    endif;
+Return 1;
+End;
+
+'Cursor Toolbar NMES****************************************
+Func Cursor1%()
+FrontView(wTrials%);
+Cursor(0, XLow()*0.7+XHigh()*0.3);  'Fetch the cursor
+CursorVisible(0, 1);  'Show the cursor
+CursorNew(XLow()*0.65+XHigh()*0.35, 1);
+CursorNew(XLow()*0.6+XHigh()*0.4, 2);
+CursorNew(XLow()*0.55+XHigh()*0.45, 3);
+CursorNew(XLow()*0.5+XHigh()*0.5, 4);
+CursorNew(XLow()*0.45+XHigh()*0.55, 5);
+
+CursorActive(0,14, 6, 0, "", "", 1);   'Data points
+CursorActive(1,16, 0, "Cursor(0)-0.5");   'Expression
+CursorActive(2,16, 0, "Cursor(0)+0.005");   'Expression
+CursorActive(3,16, 0, "Cursor(0)+0.025");   'Expression
+CursorActive(4,16, 0, "Cursor(0)+0.049");
+
+Return 1;
+End; 
+
+'Cursor Toolbar CMS****************************************
+Func Cursor2%()
+FrontView(wTrials%);
+Cursor(0, XLow()*0.7+XHigh()*0.3);  'Fetch the cursor
+CursorVisible(0, 1);  'Show the cursor
+CursorNew(XLow()*0.65+XHigh()*0.35, 1);
+CursorNew(XLow()*0.6+XHigh()*0.4, 2);
+CursorNew(XLow()*0.55+XHigh()*0.45, 3);
+CursorNew(XLow()*0.5+XHigh()*0.5, 4);
+CursorNew(XLow()*0.45+XHigh()*0.55, 5);
+
+CursorActive(0,14, 6, 0, "", "", 1);   'Data point
+CursorActive(1,16, 0, "Cursor(0)+0.005");   'Expression
+CursorActive(2,16, 0, "Cursor(0)+0.015");   'Expression
+CursorActive(3,16, 0, "Cursor(0)+0.040");   'Expression
+CursorActive(4,16, 0, "Cursor(0)+2.613");   'Expression
+CursorActive(5,16, 0, "Cursor(0)+3.113");   'Expression
+CursorActive(6,16, 0, "Cursor(0)+3.118");   'Expression
+CursorActive(7,16, 0, "Cursor(0)+3.128");   'Expression
+CursorActive(8,16, 0, "Cursor(0)+3.153");   'Expression
+
+Return 1;
+End; 
+
+'Cursor Toolbar TMS****************************************
+Func Cursor3%()
+FrontView(wTrials%);
+Cursor(0, XLow()*0.7+XHigh()*0.3);  'Fetch the cursor
+CursorVisible(0, 1);  'Show the cursor
+CursorNew(XLow()*0.65+XHigh()*0.35, 1);
+CursorNew(XLow()*0.6+XHigh()*0.4, 2);
+CursorNew(XLow()*0.55+XHigh()*0.45, 3);
+CursorNew(XLow()*0.5+XHigh()*0.5, 4);
+CursorNew(XLow()*0.45+XHigh()*0.55, 5);
+
+CursorActive(0,14, 6, 0, "", "", 1);   'Data points
+CursorActive(1,16, 0, "Cursor(0)+0.005");   'Expression
+CursorActive(2,16, 0, "Cursor(0)+0.020");   'Expression
+CursorActive(3,16, 0, "Cursor(0)+0.050");   'Expression
+CursorActive(4,16, 0, "Cursor(0)+2.613");   'Expression
+CursorActive(5,16, 0, "Cursor(0)+3.113");   'Expression
+CursorActive(6,16, 0, "Cursor(0)+3.118");   'Expression
+CursorActive(7,16, 0, "Cursor(0)+3.133");   'Expression
+CursorActive(8,16, 0, "Cursor(0)+3.163");   'Expression
+
+Return 1;
+End; 
+
+Func WClose%()
+FileClose(0,-1);                               'Close the current window and do not save the data or query the user
+Return 1;
+End;
+
+'QUIT TOOLBAR AND ALL OPEN FILES BUT PROMPT TO DO SO***
+Func Quit%()
+SampleStop();
+ret%:=Query("Are you sure you wish to quit?"); 'Dialog box to say yes or no to quitting the file: safety mechanism
+if ret%=1 then                                 'If yes
+    FileClose(-1,-1);                              'Exits file, quits toolbar and closes all windows
+endif;                                         'If no
+Return 1-2*ret%;                               'Returns to sampled file with toolbar still active and windows avail. if no, otherwise quits toolbar and script and all windows
+End;
+
+Func MatchRamp%()  'makes Ramp window
+FrontView(wTrials%);
+if wRamp%=0 then wRamp%:=WindowDuplicate(); endif;
+FrontView(wRamp%);    
+ChanHide(-1);  
+ChanShow("701,702,703,5,6"); 
+YRange(701,-5,5);
+ChanOrder(701,0,1);
+ChanOrder(701,0,702);
+ChanOrder(701,0,703);
+ChanColourSet(701,2,1,1,1);
+ChanColourSet(702,2,1,1,1);
+ChanColourSet(703,1,1,0,0);
+ChanPenWidth(701,1.5);
+ChanPenWidth(702,1.5);
+ViewTrigger(31,0,0,1,2,0,1,1,2,0);         'Enable view trigger
+XRange(0,12);                              'X axis from 0-16secs 
+WindowVisible(1);                          'Shows cursor y values window
+Window(0,0,75,100);                       'Positions cursor window in bottom left screen
+CursorNew(0,1);
+CursorNew(0,2);
+CursorNew(0,3);
+CursorNew(0,4);
+CursorNew(0,5);
+CursorNew(0,6);
+CursorNew(0,7);
+CursorActive(1,16, 0, "Cursor(0)+2");   'Expression
+CursorActive(2,16, 0, "Cursor(0)+3");   'Expression
+CursorActive(3,16, 0, "Cursor(0)+5");   'Expression
+CursorActive(4,16, 0, "Cursor(0)+6");   'Expression
+CursorActive(5,16, 0, "Cursor(0)+8");   'Expression
+CursorActive(6,16, 0, "Cursor(0)+9");   'Expression
+CursorActive(7,16, 0, "Cursor(0)+10");   'Expression
+CursorVisible(-1,1);
+Return 1;
+End;
+
+'RAMP SETTINGS*****************************************When "settings button is clicked, it opens up a GUI where you can plug in important info. These values are then amended to appropriate variables
+Func OnSettings%()  
+DlgCreate("Set the ramps and hold their parameters");    'Opens dialog box when "Settings" function activated to change var
+dlgReal(1,"Initial value(mv):",-5000.0,4997.5);          'Starting value of the EMG level. Usually zero because muscle is relaxed
+DlgReal(2,"Max PF EMG (mv)",0,9997.5);             'The 100 MVC EMG at the starting Ankle Angle
+DlgReal(3,"Max DF EMG (mv)",0,9997.5);             'The 100 MVC EMG at the ending Ankle Angle
+DlgInteger(4,"Desired %MVC_PF:",1,100);          'Integer values not voltage values
+DlgInteger(5,"Desired %MVC_DF:",1,100);          'Integer values not voltage values
+DlgInteger(6,"Delay before ramp(ms):",1,10000);          'Delay before the initial ramp (time before activation)
+DlgInteger(7,"Ramp durations(ms):",1,10000);           'The time that the ramp will increase or decrease.
+'DlgInteger(6,"Hold durations (ms):",1,10000);            'The amount of time a specific activation level will be held. Same for each ramp change.
+'DlgInteger(9,"reference Iso length (ms):",1,20000);      'The length an isometric contraction would need to be to line up reference to RFE/RFD
+DlgInteger(8,"Y Maximum Offset (MV):",1,20000); 
+' Next the values above are passed to the proper variables, with the position number above linning up the variables below
+
+if DlgShow(vRampStart,vMVCPF,vMVCDF,vPercentMVC%,vPercentMVCDF%,vDelay%,vRampDurationUp%,vYrangeOffset) then    'Start new dialog
+    SetVars();   'Show dialog box and allow variables to be updated and passed to sequencer 
+endif;
+return 1;  
+end;
+
+var vRampAmp,vRampL,vRampU,vRamp1L,vRamp1U,vRamp2L,vRamp2U,vSlopeUp,vRampAmp2,vSlopeUp2;
+
+Proc SetVars()  'Update variables
+vRampAmp := ((vMVCDF)*vPercentMVCDF%/100)-vRampStart;  'Calculate  ramp amp. based on  user specified values for MVC, %MVC, and a starting value that has a different %MVC
+vSlopeUp := vRampAmp/(vRampDurationUp%*10);                   'Calculate slope (rate of ramp) up
+vRampL := vRampStart-(vMVCPF*0.03);
+vRampU := vRampStart+(vMVCPF*0.03);
+vRamp1L := vRampAmp+vRampL;
+vRamp1U := vRampAmp+vRampU;
+vRampAmp2 := ((vMVCPF)*vPercentMVC%/100)-vRampStart;  'Calculate  ramp amp. based on  user specified values for MVC, %MVC, and a starting value that has a different %MVC
+vSlopeUp2 := vRampAmp2/(vRampDurationUp%*10);                   'Calculate slope (rate of ramp) up
+vRamp2L := vRampAmp2+vRampL;
+vRamp2U := vRampAmp2+vRampU;
+'Initial values, placed here because it requires info from calculations above
+if SampleStatus() >= 0 then               'if sampling...  
+    SampleSeqVar(1,vRampAmp*429496.7296);'Ramp Amplitude in mV 
+                                         'In order to pass a variable as the target voltage for the RAMP instruction 
+                                         'the voltage must be specified as a value in the range of a signed 32Bit 
+                                         'integer: -2,147,483,648 (-5V) to +2,147,483,647(+5V). Therefor 1Volt = 
+                                         '2,147,483,648/5. If the value specified by the user is in mV it is 
+                                         'multiplied by 429496.7296 to convert it to the appropriate integer 
+                                         'value to represent the value in volts.
+   SampleSeqVar(2,vRampDurationUp%);       'Time to reach RampAmp
+   SampleSeqVar(4,vSlopeUp*429496.7296);   'Slope to get to RampAmp
+   SampleSeqVar(8,vRampStart*429496.7296); 'Initial value
+   SampleSeqVar(12,vSlopeUp2*429496.7296);   'Slope1 to get to RampAmp1 
+   SampleSeqVar(15,vRampL*429496.7296); 
+   SampleSeqVar(16,vRampU*429496.7296); 
+   SampleSeqVar(17,vRamp1L*429496.7296); 
+   SampleSeqVar(18,vRamp1U*429496.7296); 
+   SampleSeqVar(19,vRamp2L*429496.7296); 
+   SampleSeqVar(20,vRamp2U*429496.7296); 
+   SampleSeqVar(25,vDelay%*10);       'Time to reach RampAmp  
+'new delay variables    
+   SampleSeqVar(37,vDelay1%*10);       'Time to reach RampAmp  
+   SampleSeqVar(38,vDelay2%*10);       'Time to reach RampAmp  
+   SampleSeqVar(39,vDelay3%*10);       'Time to reach RampAmp  
+   SampleSeqVar(40,vDelay4%*10);       'Time to reach RampAmp   
+   SampleSeqVar(41,vDelay5%*10);       'Time to reach RampAmp   
+endif;
+end;
+
+
+Func YRange1%() 
+FrontView(wRamp%);
+if vRamp2U < vRamp1U then
+    YRange(-2,(vRampL-10)/1000,(vRamp1U+vYrangeOffset)/1000);
+    else YRange(-2,(vRampL-10)/1000,(vRamp2U+vYrangeOffset)/1000); endif;
+Return 1;        
+End;
